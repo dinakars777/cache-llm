@@ -1,0 +1,39 @@
+{
+  "name": "@dinakars777/cache-llm",
+  "version": "1.0.0",
+  "description": "A blazing fast local proxy server that caches LLM API calls to save costs during development.",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "cache-llm": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup src/index.ts --format esm --clean"
+  },
+  "keywords": [
+    "llm",
+    "openai",
+    "cache",
+    "proxy",
+    "cost",
+    "agent"
+  ],
+  "author": "Dinakar Sarbada",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "commander": "^11.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "picocolors": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.9.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.2"
+  }
+}
