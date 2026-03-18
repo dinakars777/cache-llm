@@ -1,54 +1,69 @@
 # cache-llm 🧠
 
-> A blazing fast local proxy server that caches LLM API calls to save you money during agent development.
+[![npm version](https://img.shields.io/npm/v/@dinakars777/cache-llm.svg?style=flat-square)](https://www.npmjs.com/package/@dinakars777/cache-llm)
+[![npm downloads](https://img.shields.io/npm/dm/@dinakars777/cache-llm.svg?style=flat-square)](https://www.npmjs.com/package/@dinakars777/cache-llm)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-`cache-llm` is a zero-config, ultra-fast proxy server that intercepts your outgoing LLM requests (e.g., to OpenAI), forwards them to the real API, and stores the response in a local SQLite database.
+> A local proxy server that caches LLM API calls to save you money during agent development.
 
-The next time your code makes the exact same request with the exact same prompt, `cache-llm` instantly returns the cached response in `<2ms`.
+When building AI agents, you run the same prompts thousands of times during testing. That burns through API credits fast. **cache-llm** intercepts your LLM requests, caches responses in a local SQLite database, and returns them in `<2ms` on repeat calls — your API bill shrinks to near zero during local development.
 
-## Why?
-When building autonomous AI agents or complex AI workflows, you end up running the exact same test suites and prompts thousands of times. This burns through your OpenAI/Anthropic API credits incredibly fast, and slows down your local development cycle by thousands of seconds.
+## Features
 
-With `cache-llm`, your API bill shrinks to almost zero during local iterative testing, and your tests run instantly.
+- ⚡ `<2ms` response time on cache hits
+- 💾 SQLite-backed — zero external dependencies
+- 🔌 Drop-in compatible with OpenAI SDK, LangChain, AutoGen, and any OpenAI-compatible client
+- 🔒 Deterministic `sha256` hashing — same prompt always hits the same cache entry
 
-## Installation & Usage
-
-You can run it instantly without installing:
+## Quick Start
 
 ```bash
 npx @dinakars777/cache-llm
 ```
 
-This will start the proxy server on port `8080`, targeting `https://api.openai.com`, and caching responses in `./.llm-cache.db`.
+Starts the proxy on `http://localhost:8080` targeting `https://api.openai.com`.
 
-### Options
-- `-p, --port`: Which port to run the proxy on (Default: 8080).
-- `-t, --target`: The base URL of the LLM API (Default: `https://api.openai.com`).
-- `-d, --db`: The location to store the SQLite database (Default: `./.llm-cache.db`).
+## Options
 
-## Configuring your App
-Just point your project's `BASE_URL` to the proxy!
+| Flag | Description | Default |
+|---|---|---|
+| `-p, --port` | Port to run the proxy on | `8080` |
+| `-t, --target` | Target LLM API base URL | `https://api.openai.com` |
+| `-d, --db` | SQLite database file path | `./.llm-cache.db` |
 
-### OpenAI Node.js SDK
+## Configuring Your App
+
+Point your client's `baseURL` at the proxy:
+
 ```typescript
+// OpenAI Node.js SDK
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  baseURL: 'http://localhost:8080/v1' // Point this to cache-llm
+  baseURL: 'http://localhost:8080/v1',
 });
 ```
 
-### LangChain, AutoGen, etc.
-Just set the environment variable:
 ```bash
+# LangChain, AutoGen, etc.
 export OPENAI_BASE_URL="http://localhost:8080/v1"
 ```
 
 ## How It Works
-1. `cache-llm` computes a deterministic `sha256` hash of the HTTP Method, URL path, Authorization header, and raw request body.
-2. If the hash exists in the local SQLite DB, it immediately returns the JSON response.
-3. If it's a MISS, it securely forwards the request to the target API, stores the response in the DB, and then returns it to your app.
+
+1. Computes a `sha256` hash of the method, URL path, auth header, and request body
+2. Returns the cached response instantly on a hit
+3. On a miss, forwards to the real API, stores the response, then returns it
+
+## Tech Stack
+
+| Package | Purpose |
+|---|---|
+| `better-sqlite3` | Fast local SQLite caching |
+| `express` | Proxy server |
+| TypeScript | Type-safe implementation |
 
 ## License
+
 MIT
