@@ -4,9 +4,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/@dinakars777/cache-llm.svg?style=flat-square)](https://www.npmjs.com/package/@dinakars777/cache-llm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-> A local proxy server that caches LLM API calls to save you money during agent development.
+> Local proxy that caches LLM API calls.
 
-When building AI agents, you run the same prompts thousands of times during testing. That burns through API credits fast. **cache-llm** intercepts your LLM requests, caches responses in a local SQLite database, and returns them in `<2ms` on repeat calls — your API bill shrinks to near zero during local development.
+Building AI agents means running the same prompts thousands of times. That burns API credits. **cache-llm** caches responses in SQLite and returns them in `<2ms` on repeat calls.
 
 ## Features
 
