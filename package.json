@@ -7,6 +7,9 @@
   "bin": {
     "cache-llm": "dist/index.js"
   },
+  "engines": {
+    "node": ">=20 <27"
+  },
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup src/index.ts --format esm --clean"
@@ -22,7 +25,7 @@
   "author": "Dinakar Sarbada",
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^11.5.0",
+    "better-sqlite3": "^12.10.0",
     "commander": "^11.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.1",
