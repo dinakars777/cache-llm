@@ -1,0 +1,5 @@
+node_modules/
+.llm-cache.db
+.llm-cache.db-*
+npm-debug.log*
+.DS_Store
