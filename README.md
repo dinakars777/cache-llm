@@ -52,7 +52,7 @@ export OPENAI_BASE_URL="http://localhost:8080/v1"
 
 ## How It Works
 
-1. Computes a `sha256` hash of the method, URL path, auth header, and request body
+1. Computes a `sha256` hash of the method, target URL, forwarded headers, and raw request body
 2. Returns the cached response instantly on a hit
 3. On a miss, forwards to the real API, stores the response, then returns it
 

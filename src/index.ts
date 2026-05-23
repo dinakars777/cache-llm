@@ -5,8 +5,84 @@ import cors from 'cors';
 import pc from 'picocolors';
 import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
-import fs from 'fs';
 import path from 'path';
+
+type CacheRow = {
+  response: string;
+  status: number;
+  headers: string;
+};
+
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+
+const REQUEST_HEADERS_TO_DROP = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  'content-length',
+  'host',
+]);
+
+const RESPONSE_HEADERS_TO_DROP = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  'content-encoding',
+  'content-length',
+]);
+
+function buildForwardHeaders(headers: express.Request['headers']) {
+  const forwardHeaders = new Headers();
+
+  for (const [key, value] of Object.entries(headers)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (REQUEST_HEADERS_TO_DROP.has(normalizedKey) || value === undefined) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        forwardHeaders.append(normalizedKey, item);
+      }
+    } else {
+      forwardHeaders.set(normalizedKey, value);
+    }
+  }
+
+  return forwardHeaders;
+}
+
+function hashRequest(method: string, targetEndpoint: string, headers: Headers, body: Buffer) {
+  const hashObj = createHash('sha256');
+  hashObj.update(method);
+  hashObj.update(targetEndpoint);
+
+  for (const [key, value] of [...headers.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    hashObj.update(key);
+    hashObj.update(value);
+  }
+
+  hashObj.update(body);
+  return hashObj.digest('hex');
+}
+
+function collectResponseHeaders(headers: Headers) {
+  const responseHeaders: Record<string, string> = {};
+
+  headers.forEach((value, key) => {
+    if (!RESPONSE_HEADERS_TO_DROP.has(key.toLowerCase())) {
+      responseHeaders[key] = value;
+    }
+  });
+
+  return responseHeaders;
+}
 
 const program = new Command();
 
@@ -50,23 +126,15 @@ app.all('*', async (req, res) => {
   const method = req.method;
   const urlPath = req.originalUrl;
   const targetEndpoint = `${TARGET_URL}${urlPath}`;
-  
-  // Create a deterministic hash of the request to use as cache key
-  const requestBody = req.body instanceof Buffer ? req.body.toString('utf-8') : '';
-  const authHeader = req.headers['authorization'] || '';
-  
-  const hashObj = createHash('sha256');
-  hashObj.update(method);
-  hashObj.update(targetEndpoint);
-  hashObj.update(authHeader);
-  hashObj.update(requestBody);
-  const cacheKey = hashObj.digest('hex');
+  const requestBody = req.body instanceof Buffer ? req.body : Buffer.alloc(0);
+  const forwardHeaders = buildForwardHeaders(req.headers);
+  const cacheKey = hashRequest(method, targetEndpoint, forwardHeaders, requestBody);
 
   const startTime = performance.now();
 
   try {
     // 1. Check Cache
-    const cachedRow = selectStmt.get(cacheKey) as any;
+    const cachedRow = selectStmt.get(cacheKey) as CacheRow | undefined;
 
     if (cachedRow) {
       const endTime = performance.now();
@@ -90,10 +158,7 @@ app.all('*', async (req, res) => {
     // Construct fetch options
     const fetchOptions: RequestInit = {
       method,
-      headers: {
-        'Content-Type': req.headers['content-type'] || 'application/json',
-        'Authorization': authHeader
-      }
+      headers: forwardHeaders
     };
 
     if (method !== 'GET' && method !== 'HEAD') {
@@ -104,10 +169,7 @@ app.all('*', async (req, res) => {
     const responseText = await fetchResponse.text();
     
     // Store in cache
-    const responseHeaders: Record<string, string> = {};
-    fetchResponse.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
-    });
+    const responseHeaders = collectResponseHeaders(fetchResponse.headers);
 
     // Only cache successful or acceptable status codes (e.g. 200 OK)
     if (fetchResponse.ok) {
@@ -121,7 +183,8 @@ app.all('*', async (req, res) => {
 
     const endTime = performance.now();
     const duration = (endTime - startTime).toFixed(1);
-    console.log(`${pc.cyan('SAVED')} ${pc.gray(duration + 'ms')} cached new response.`);
+    const result = fetchResponse.ok ? 'SAVED' : 'BYPASS';
+    console.log(`${pc.cyan(result)} ${pc.gray(duration + 'ms')} ${fetchResponse.status}`);
 
     // Return to client
     for (const [key, value] of Object.entries(responseHeaders)) {

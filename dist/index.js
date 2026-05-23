@@ -8,6 +8,63 @@ import pc from "picocolors";
 import Database from "better-sqlite3";
 import { createHash } from "crypto";
 import path from "path";
+var HOP_BY_HOP_HEADERS = /* @__PURE__ */ new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+var REQUEST_HEADERS_TO_DROP = /* @__PURE__ */ new Set([
+  ...HOP_BY_HOP_HEADERS,
+  "content-length",
+  "host"
+]);
+var RESPONSE_HEADERS_TO_DROP = /* @__PURE__ */ new Set([
+  ...HOP_BY_HOP_HEADERS,
+  "content-encoding",
+  "content-length"
+]);
+function buildForwardHeaders(headers) {
+  const forwardHeaders = new Headers();
+  for (const [key, value] of Object.entries(headers)) {
+    const normalizedKey = key.toLowerCase();
+    if (REQUEST_HEADERS_TO_DROP.has(normalizedKey) || value === void 0) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        forwardHeaders.append(normalizedKey, item);
+      }
+    } else {
+      forwardHeaders.set(normalizedKey, value);
+    }
+  }
+  return forwardHeaders;
+}
+function hashRequest(method, targetEndpoint, headers, body) {
+  const hashObj = createHash("sha256");
+  hashObj.update(method);
+  hashObj.update(targetEndpoint);
+  for (const [key, value] of [...headers.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    hashObj.update(key);
+    hashObj.update(value);
+  }
+  hashObj.update(body);
+  return hashObj.digest("hex");
+}
+function collectResponseHeaders(headers) {
+  const responseHeaders = {};
+  headers.forEach((value, key) => {
+    if (!RESPONSE_HEADERS_TO_DROP.has(key.toLowerCase())) {
+      responseHeaders[key] = value;
+    }
+  });
+  return responseHeaders;
+}
 var program = new Command();
 program.name("cache-llm").description("Blazing fast local proxy server that caches LLM API calls").version("1.0.0").option("-p, --port <number>", "Port to run the proxy on", "8080").option("-t, --target <url>", "Target LLM API Base URL", "https://api.openai.com").option("-d, --db <path>", "Path to SQLite database", "./.llm-cache.db").parse(process.argv);
 var options = program.opts();
@@ -34,14 +91,9 @@ app.all("*", async (req, res) => {
   const method = req.method;
   const urlPath = req.originalUrl;
   const targetEndpoint = `${TARGET_URL}${urlPath}`;
-  const requestBody = req.body instanceof Buffer ? req.body.toString("utf-8") : "";
-  const authHeader = req.headers["authorization"] || "";
-  const hashObj = createHash("sha256");
-  hashObj.update(method);
-  hashObj.update(targetEndpoint);
-  hashObj.update(authHeader);
-  hashObj.update(requestBody);
-  const cacheKey = hashObj.digest("hex");
+  const requestBody = req.body instanceof Buffer ? req.body : Buffer.alloc(0);
+  const forwardHeaders = buildForwardHeaders(req.headers);
+  const cacheKey = hashRequest(method, targetEndpoint, forwardHeaders, requestBody);
   const startTime = performance.now();
   try {
     const cachedRow = selectStmt.get(cacheKey);
@@ -59,20 +111,14 @@ app.all("*", async (req, res) => {
     console.log(`${pc.yellow("MISS")} ${method} ${urlPath} -> ${targetEndpoint}`);
     const fetchOptions = {
       method,
-      headers: {
-        "Content-Type": req.headers["content-type"] || "application/json",
-        "Authorization": authHeader
-      }
+      headers: forwardHeaders
     };
     if (method !== "GET" && method !== "HEAD") {
       fetchOptions.body = requestBody;
     }
     const fetchResponse = await fetch(targetEndpoint, fetchOptions);
     const responseText = await fetchResponse.text();
-    const responseHeaders = {};
-    fetchResponse.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
-    });
+    const responseHeaders = collectResponseHeaders(fetchResponse.headers);
     if (fetchResponse.ok) {
       insertStmt.run(
         cacheKey,
@@ -83,7 +129,8 @@ app.all("*", async (req, res) => {
     }
     const endTime = performance.now();
     const duration = (endTime - startTime).toFixed(1);
-    console.log(`${pc.cyan("SAVED")} ${pc.gray(duration + "ms")} cached new response.`);
+    const result = fetchResponse.ok ? "SAVED" : "BYPASS";
+    console.log(`${pc.cyan(result)} ${pc.gray(duration + "ms")} ${fetchResponse.status}`);
     for (const [key, value] of Object.entries(responseHeaders)) {
       res.setHeader(key, value);
     }
